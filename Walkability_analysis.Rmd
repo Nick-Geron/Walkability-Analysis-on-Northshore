@@ -1,0 +1,1582 @@
+---
+title: "Walkability Analysis"
+author: "Nicholas Geron"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Walkability Analysis
+
+## Background Information
+
+Food equity is a leading social justice issue in the twenty-first century.
+Boston, Massachusetts has dedicated resources to addressing food insecurity and
+equitable access in recent years (Anderson 2023). Part of equitable access to
+food is walkability to locations such as food pantries. Walkability measurements
+vary based on the model being applied, though all include some measure of the
+distance of households from a resource, the number of intersections between a
+household and the resource, and population density (Perez-Pereda et al 2024,
+Anderson 2023). Walkability can be improved by ensuring that resources are
+distributed at appropriate intervals throughout an area and by providing
+amenities such as sidewalks to improve walking accessibility. Additional means
+of improving walkability can include decreasing speed limits of pedestrian roads
+(Anderson 2023). The study focuses on analyzing the walkability of food
+distribution sites across five Massachusetts cities: Danvers, Beverly, Peabody,
+Lynn, and Salem. This North Shore region represents a diverse population with
+varying socioeconomic backgrounds, making it an ideal area to explore the
+challenges and equity issues surrounding food accessibility. The study timeframe
+spans from 202x to 2024, capturing recent changes in food distribution networks,
+community demographics, and environmental factors like increased flood risks or
+new transit developments that could impact walkability. The primary population
+of interest includes residents across these five cities, many of whom rely on
+food pantries and other distribution sites for essential resources. By examining
+walkability, this research seeks to assess how accessible these food sources are
+to people without personal vehicles, especially in flood events that may disrupt
+transportation routes. Key factors like income levels, transit access,
+environmental conditions, and geographic barriers will be considered in
+evaluating accessibility. The project ultimately aims to reveal patterns in food
+accessibility and identify specific areas where improvements may be most needed.
+Insights from this study could help local organizations, community planners, and
+policymakers design interventions that ensure equitable food access, especially
+in underserved neighborhoods that face additional transportation or
+environmental challenges.
+
+For the final project, our research will focus on identifying the presence of
+food deserts within the study area of Danvers, Beverly, Peabody, Lynn, and
+Salem, Massachusetts, and examining their relationship to income levels and other socioeconomic variables. A food desert is defined as an area with limited access to affordable and nutritious
+food, often due to factors like distance to the nearest grocery store, lack of
+public transportation, and income disparities. By mapping the spatial
+distribution of food distribution sites, particularly food pantries, and
+correlating these locations with income data, we aim to determine if low-income
+neighborhoods are disproportionately affected by limited access to healthy food
+options. This research is crucial in understanding the broader implications of
+food insecurity in the context of natural disasters, such as floods, and how
+certain areas may face heightened challenges in accessing essential resources
+during such events. Using available GIS tools, such as the EPA Walkability
+Index, I will assess how walkability impacts access to food distribution sites
+in these low-income regions. The findings will contribute to ongoing discussions
+about food equity, specifically by highlighting areas where interventions may be
+necessary to improve access to nutritious food for underserved populations. This
+research will inform future policy decisions and emergency planning efforts
+related to food accessibility.
+
+## Data Layers
+
+#### Walk Potential/Bike Potential: 
+From MassDOT, the walking and biking potential layers use multiple different equations to create a tile layer
+covering the entire state that classifies areas as high, medium, and low
+potential. Created in 2022 these layers are the most updated version that
+massDOT has released to the public, created using four different factors (social
+equity, potential demand, crashes, and transit access). This did not require
+collection - but rather compiling. This data will provide already calculated
+potential information to the data model.The equation that MassDOT used is : Potential for everyday walking = (0.7 * Potential Demand + 0.2 * Transportation Access) + (1 + Social Equity))
+The demand coming from Potential walking demand (Local Access Score) and Streetlight data (of all trips under 3 miles). Transportation Acces indicaates all areas within a 10 minute walk from any transit hub. Finally, Social equity takes into account: Minorities, no-vehicle households, low-income households, Limited English speaking households, people with disabilities, under 18 and over 65 along with streetlight obtained demographic data.
+
+#### Food Distribution Centers
+
+THERE ARE ISSUES WITH THE FOOD DISTRIBUTION STORE TYPES - need to edit the original layers. 
+
+The Food Distribution was collected by the Greenbelt Organization, a local non-profit
+dedicated to preserving open space and promoting community well-being. This data
+was gathered through field surveys, community outreach, and collaborations with
+local food distribution sites to assess both food availability and the
+walkability of surrounding areas. The data includes the locations of food
+pantries and other distribution sites, as well as walkability scores for each
+area, which were calculated based on factors like sidewalk presence, street
+connectivity, and pedestrian infrastructure. The food distribution data is
+categorical, identifying whether a site is a food pantry, while the walkability
+data is continuous, representing varying levels of pedestrian access across the
+region. This dataset will play a crucial role in identifying potential food
+deserts within the study area and evaluating how accessible these resources are
+for the population, particularly in relation to income levels, flood risk, and
+transportation access. By mapping these data points, this research can identify
+areas where food access is limited, especially for individuals without reliable
+transportation, contributing to the broader goal of understanding food equity
+and accessibility during emergencies
+
+## Methods
+
+Need to explain: 
+800m buffer
+combining food distribution sites
+Multiplying by 10000 the walking potential 
+Spatial join to census block groups, transit sites, food distribution locations
+Random forest analysis of census block groups
+Statistical analysis of transit sites
+Statistical analysis of food distribution locations
+
+TBD: Join food distribution locations to census block groups to identify potential food deserts? Could use cluster analysis here
+
+## Analysis
+
+```{r, out.width = "90%", echo=TRUE, message=FALSE, warning=FALSE}
+# Install the required packages if not already installed
+#install.packages(c("argparse", "elevatr", "glue", "sf", "terra", "tidycensus", "tigris", "units", "yaml"))
+
+# Install and load required packages if not already done
+# Load libraries
+# Load required libraries
+library(tidycensus)
+library(tigris)
+library(dplyr)
+library(sf)
+library(ggplot2)
+library(ggspatial)
+library(tmap)
+library(tidyverse)
+library(viridis)
+library(elevatr)
+library(glue)
+library(terra)
+library(units)
+library(yaml)
+library(randomForest)
+library(caret)
+library(multcomp)
+
+```
+
+Import data
+
+```{r, out.width = "90%", echo=TRUE, message=FALSE, warning=FALSE}
+
+##################################################################################
+###    Town Boundaries
+
+# Define the working CRS (Massachusetts State Plane projection)
+working_crs <- 26986  # EPSG code for Massachusetts State Plane
+
+# Step 1: Load the town boundary shapefile (CENSUS2020TOWNS_POLY_CopyFeatures.shp)
+town_boundary_path <- "./Data/CENSUS2020TOWNS_SHP/CENSUS2020TOWNS_POLY.shp"
+town_boundaries <- st_read(town_boundary_path) %>%
+  st_transform(crs = working_crs) 
+
+town_boundaries$TOWN20 <- as.character(town_boundaries$TOWN20)
+
+fivetowns <- town_boundaries %>% filter(TOWN20 %in% c("BEVERLY", "SALEM", "LYNN", "DANVERS", "PEABODY"))
+
+##################################################################################
+###    Census Data 
+
+# Set your Census API key
+#census_api_key("405a3863533a4f16492fae1fe5de97d938b75fe8", overwrite = TRUE)
+
+# Updated get_acs call with all codes
+#MA_ACS_blkgrp <- get_acs(
+#  geography = "block group",
+#  variables = c(
+#    totalpop = "B03002_001",
+#    whitepop = "B03002_003",
+#    blackpop = "B03002_004",
+#    hispanicpop = "B03002_012",
+#    engLangIso = "C16002_004",
+#    totalHouseholds = "B11001_001",
+#    medHouseholdInc = "B19013_001",
+#    edTotal = "B15003_001",
+#    edBA = "B15003_022",
+#    edMA = "B15003_023",
+#    edProf = "B15003_024",
+#    edDr = "B15003_025",
+#    totalInLaborForce = "B23025_003",
+#    unempInLaborForce = "B23025_005",
+#    totalpop18 = "B01001_001",
+#    veteranStatus = "B21001_001",      # Veteran status example
+#    healthInsurance = "B08302_008",
+#    totalworkers = "B08301_001",
+#    walk_to_work = "B08301_019",       # Workers walking to work
+#    publictransit = "B08301_010",
+#    public_transit = "B08301_016",     # Workers using public transit
+#    no_vehicle = "B25044_003",         # Households with no vehicle
+#    one_vehicle = "B25044_010"         # Households with one vehicle# Households with health #insurance
+#  ),
+#  state = "MA",
+#  output = "wide"
+#)
+
+#names(MA_ACS_blkgrp)
+
+# Create percentage variables
+#MA_ACS_blkgrp1 <- MA_ACS_blkgrp %>%
+#  mutate(
+#    PctWhite = whitepopE / totalpopE,
+#    PctBlack = blackpopE / totalpopE,
+#    PctHispanic = hispanicpopE / totalpopE,
+#    PctLimEngl = engLangIsoE / totalHouseholdsE,
+#    peroneorless = (no_vehicleE + one_vehicleE)/ totalHouseholdsE,
+#    perwalkers = walk_to_workE / totalworkersE,
+#    perpublictrans = publictransitE/ totalworkersE,
+#    perveterans = veteranStatusE / totalpop18E,
+#    per_unemployed = unempInLaborForceE / totalInLaborForceE,
+#    per_bachormore = (edBAE + edMAE + edProfE + edDrE) / edTotalE,
+#  ) %>%
+#  select(GEOID, PctWhite, PctBlack, PctHispanic, PctLimEngl, medHouseholdIncE, totalpopE, #per_bachormore, peroneorless, perwalkers, perpublictrans, perveterans, per_unemployed)
+
+# Load block group shapefile for Massachusetts using tigris
+#MA_blockgrp <- block_groups(state = "MA", year = 2020, class = "sf")
+
+# Ensure GEOID is the same type in both datasets
+#MA_blockgrp$GEOID <- as.character(MA_blockgrp$GEOID)
+
+# Perform a non-spatial join (using GEOID) to add the ACS data to the block group shapefile
+#MA_blockgrp_data <- left_join(MA_blockgrp, MA_ACS_blkgrp1, by = "GEOID")
+
+#MA_blockgrp_data <- st_transform(MA_blockgrp_data, crs = working_crs)
+
+#MA_blockgrp_geo_five_towns <- st_intersection(MA_blockgrp_data, fivetowns)
+
+##################################################################################
+###    Food Distribution Sites 
+
+# Load food sites shapefile
+file_path_food_sites <- "./Data/NSFFC_Food_Access/FarmStands_FarmersMarkets_Merge.shp"
+farmstands <- st_read(file_path_food_sites) %>%
+  st_transform(crs = working_crs)
+
+# Step 4: Load food sites shapefile (FoodSites_FarmersMarkets_Merge.shp)
+grocerystores_path <- "./Data/NSFFC_Food_Access/grocerystores_merge.shp"
+grocerystores <- st_read(grocerystores_path) %>%
+  st_transform(crs = working_crs)  # Transform food sites to the correct CRS
+names(grocerystores)
+view(grocerystores)
+
+# Step 4: Load food sites shapefile (FoodSites_FarmersMarkets_Merge.shp)
+foodoutside_path <- "./Data/NSFFC_Food_Access/Foodoutside5towns.shp"
+foodoutside <- st_read(foodoutside_path) %>%
+  st_transform(crs = working_crs)  # Transform food sites to the correct CRS
+names(foodoutside)
+
+
+# Step 4: Load food sites shapefile (FoodSites_FarmersMarkets_Merge.shp)
+foodbanks_path <- "./Data/NSFFC_Food_Access/FoodBanks.shp"
+foodbanks <- st_read(foodbanks_path) %>%
+  st_transform(crs = working_crs)  # Transform food sites to the correct CRS
+names(foodbanks)
+
+#Select variables for merging foodfiles
+foodbanks4 <- foodbanks %>% 
+  dplyr::select(City, Store_Type, Store_Name, geometry)
+
+#Select variables for merging foodfiles
+grocerystores4 <- grocerystores %>% 
+  dplyr::select(City, Store_Type, Store_Name, geometry)
+
+#Select variables for merging foodfiles
+foodoutside4 <- foodoutside %>% 
+  dplyr::select(City, Store_Type, Store_Name, geometry)
+
+#Select variables for merging foodfiles
+farmstands4 <- farmstands %>% 
+  dplyr::select(City, Store_Type, Store_Name, geometry)
+
+ALLfoodsites <- rbind(farmstands4, grocerystores4, foodbanks4)
+
+ALLfoodsites$uniqueID <- 1:nrow(ALLfoodsites) + 100
+
+# Condense classifications into specified categories
+ALLfoodsites1 <- ALLfoodsites %>%
+  mutate(Store_Type = case_when(
+    Store_Type %in% c("Butcher") ~ "Butcher",
+    Store_Type %in% c("Convenience", "Gas Station") ~ "Convenience",
+    Store_Type %in% c("Farm Stand") ~ "Farm",
+    Store_Type %in% c("Farmers Markets", "Winter Markets") ~ "Farmer Markets",
+    Store_Type %in% c("Food Pantry") ~ "Food Pantry",
+    Store_Type %in% c("Grocery Store", "Super Store", "Supermarket") ~ "Stores/Supermarkets",
+    TRUE ~ "Other"  # Retain "Other" as a category
+  )) 
+
+# Optionally, check the count of each category to confirm
+foodsite_summary <- ALLfoodsites1 %>%
+  group_by(Store_Type) %>%
+  summarise(Count = n())
+
+# Create an 800m buffer around each food distribution site
+food1_buffers <- st_buffer(ALLfoodsites1, dist = 800)
+
+
+##################################################################################
+###    Walkability Data
+
+# Step 4: Load Road Inventory Shapefile
+#walking_potential <- st_read("./Data/MA_walkabilityindex/Potential_for_Walkable_Trips_2022_Update#.shp") %>%
+#  st_transform(crs = working_crs)
+
+#filtered_walkability <- walking_potential %>%
+#  dplyr::select(walking_po, geometry)
+
+# View the first few rows of the filtered data
+#head(filtered_walkability)
+
+#st_crs(fivetowns) == st_crs(filtered_walkability)
+
+#drop m
+#filtered_walkability_zm <- st_zm(filtered_walkability) 
+
+#filtered_walkability_zm$walking10 <- filtered_walkability_zm$walking_po * 10000
+
+#filtered_walkability_zm5towns <- st_intersection(filtered_walkability_zm, fivetowns)
+
+#st_write(filtered_walkability_zm5towns, "./Data/MA_walkabilityindex/fivetowns_walkability1.shp")
+
+# Step 5: Spatial Join of Road Data with Census Block Groups
+#MA_blockgrp_geo_five_towns1 <- st_join(MA_blockgrp_geo_five_towns, filtered_walkability_zm, join = #st_intersects)
+
+# Summarize walking_po to calculate average value by GEOID, scaled by 1000
+#summary_data <- MA_blockgrp_geo_five_towns1 %>%
+#  st_drop_geometry() %>%  # Remove spatial geometry for summarization
+#  mutate(walking_po_scaled = walking_po * 10000) %>%  # Scale walking_po values by 10000
+#  group_by(GEOID) %>%     # Group by GEOID (or another unique identifier)
+#  summarise(
+#    average_walking_potential = mean(walking_po_scaled, na.rm = TRUE),  # Calculate average scaled #walking potential
+#    count = n()  # Count the number of rows per group
+#  )
+
+
+# Join summary_data back to spatial data for mapping
+#MA_blockgrp_5_walkability <- left_join(MA_blockgrp_geo_five_towns, summary_data, by = "GEOID")
+
+#Create smaller shapefile
+#st_write(MA_blockgrp_5_walkability, #"./Data/Census_walkability5towns/maCensusblkgrp_walkability.shp")
+
+# Load walkability Census Shapefile
+MA_blockgrp_5_walk <- st_read("./Data/Census_walkability5towns/maCensusblkgrp_walkability.shp")
+
+# Load walkability for 5 towns
+fivetowns_walk <- st_read("./Data/MA_walkabilityindex/fivetowns_walkability1.shp")
+
+###########################################################################################
+###########    Commuter Rail Data
+
+# Load Commuter Rail Station Data
+commuterrailstations_path <- "./Data/CommuterRail/CommuterRailStations/MBTACommuterRailStations_projectarea.shp"
+transit_points <- st_read(commuterrailstations_path) %>%
+  st_transform(crs = working_crs)
+
+# Load Commuter Rail Line Data
+commuterrailline_path <- "./Data/CommuterRail/CommuterRailLines/MBTACommuterRailLines_projectarea.shp"
+transit_lines <- st_read(commuterrailline_path) %>%
+  st_transform(crs = working_crs)
+
+#Clip Train line
+transitlinesclipped <- st_intersection(transit_lines,fivetowns)
+
+```
+
+Create maps
+
+```{r, out.width = "90%", echo=TRUE, message=FALSE, warning=FALSE}
+
+names(MA_blockgrp_5_walk)
+
+# Create a map of the average walking potential
+ggplot() +
+  # Plot block groups with average walking potential
+  geom_sf(data = MA_blockgrp_5_walk, aes(fill = avrg_w_), color = NA) +
+  scale_fill_viridis_c(
+    option = "plasma",
+    name = "Avg Walking Potential",
+    na.value = "grey90"
+  ) +
+  # Overlay town boundaries for context
+  geom_sf(data = fivetowns, fill = NA, color = "black", size = 0.5) +
+  theme_minimal() +
+  labs(
+    title = "Average Walking Potential by Census Block Group",
+    subtitle = "Scaled Walking Potential (x10000)",
+    caption = "Data Source: ACS 2020 & Walkability Layer"
+  ) +
+  theme(
+    legend.position = "right",
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    axis.text = element_blank(),
+    axis.ticks = element_blank()
+  ) +
+  coord_sf()
+
+#separate Lynn for case study
+lynn <- fivetowns %>% filter(NAMELSAD20 %in% c("Lynn city"))
+
+#Clip walkability to town_boundaries
+walkabilitylynn <- st_intersection(fivetowns_walk, lynn)
+
+#Choropleth map with ggplot
+ggplot() +
+  #Map fill by walking potential
+  geom_sf(data = walkabilitylynn, aes(color = walking_po), size = 1) + 
+  scale_fill_viridis_c(
+    option = "plasma",
+    name = "Avg Walking Potential",
+    na.value = "grey90")+
+  theme_minimal() +
+  labs(title = "Walkability in Lynn", caption = "Source: Walkability Data from MassGIS (Updated May 29, 2024") +
+  theme(legend.position = "right")
+
+#separate Peabody for case study 
+peabody <- fivetowns %>% filter(NAMELSAD20 %in% c("Peabody city"))
+
+#Clip walkability to town_boundaries 
+walkabilitypeabody <- st_intersection(fivetowns_walk, peabody)
+
+#Choropleth map with ggplot
+ggplot() +
+  #Map fill by walking potential
+  geom_sf(data = walkabilitypeabody, aes(color = walking_po), size = 1) + 
+  scale_fill_viridis_c(
+    option = "plasma",
+    name = "Avg Walking Potential",
+    na.value = "grey90")+
+  theme_minimal() +
+  labs(title = "Walkability in Peabody, MA", caption = "Source: Walkability Data from MassGIS (Updated May 29, 2024") +
+  theme(legend.position = "right")
+
+#separate Beverly for case study 
+beverly <- fivetowns %>% filter(NAMELSAD20 %in% c("Beverly city"))
+
+#Clip walkability to town_boundaries 
+walkabilitybeverly <- st_intersection(fivetowns_walk, beverly)
+
+#Choropleth map with ggplot
+ggplot() +
+  #Map fill by walking potential
+  geom_sf(data = walkabilitybeverly, aes(color = walking_po), size = 1) + 
+  scale_fill_viridis_c(
+    option = "plasma",
+    name = "Avg Walking Potential",
+    na.value = "grey90")+
+  theme_minimal() +
+  labs(title = "Walkability in Beverly, MA", caption = "Source: Walkability Data from MassGIS (Updated May 29, 2024") +
+  theme(legend.position = "right")
+
+#separate Danvers for case study 
+danvers <- fivetowns %>% filter(NAMELSAD20 %in% c("Danvers town"))
+
+#Clip walkability to town_boundaries 
+walkabilitydanvers <- st_intersection(fivetowns_walk, danvers)
+
+#Choropleth map with ggplot
+ggplot() +
+  #Map fill by walking potential
+  geom_sf(data = walkabilitydanvers, aes(color = walking_po), size = 1) + 
+  scale_fill_viridis_c(
+    option = "plasma",
+    name = "Avg Walking Potential",
+    na.value = "grey90")+
+  theme_minimal() +
+  labs(title = "Walkability in Danvers, MA", caption = "Source: Walkability Data from MassGIS (Updated May 29, 2024") +
+  theme(legend.position = "right")
+
+#separate Salem for case study 
+salem <- fivetowns %>% filter(NAMELSAD20 %in% c("Salem city"))
+
+#Clip walkability to town_boundaries 
+walkabilitysalem <- st_intersection(fivetowns_walk, salem)
+
+#Choropleth map with ggplot
+ggplot() +
+  #Map fill by walking potential
+  geom_sf(data = walkabilitysalem, aes(color = walking_po), size = 1) + 
+  scale_fill_viridis_c(
+    option = "plasma",
+    name = "Avg Walking Potential",
+    na.value = "grey90")+
+  theme_minimal() +
+  labs(title = "Walkability in Salem, MA", caption = "Source: Walkability Data from MassGIS (Updated May 29, 2024") +
+  theme(legend.position = "right")
+
+
+# Combined map of Average Walking Potential and Food Distribution Sites
+ggplot() +
+  # Plot block groups with average walking potential
+  geom_sf(data = MA_blockgrp_5_walk, aes(fill = avrg_w_), color = NA, alpha = 0.8) +
+  scale_fill_viridis_c(
+    option = "mako",
+    name = "Avg Walking Potential",
+    na.value = "grey90"
+  ) +
+  # Add the points for all food sites
+  geom_sf(data = ALLfoodsites1, aes(color = Store_Type), size = 2, alpha = 0.9) +
+  # Customize color scale for food site types
+  scale_color_viridis_d(name = "Store Type") +
+  # Overlay town boundaries for context
+  geom_sf(data = fivetowns, fill = NA, color = "black", size = 0.5) +
+  # Add labels and themes
+  theme_minimal() +
+  labs(
+    title = "Average Walking Potential and Food Distribution Sites",
+    subtitle = "Census Block Groups and Various Food Sites in Essex Greenbelt Area",
+    caption = "Data Source: ACS 2020, Walkability Layer, NSFFC Food Access"
+  ) +
+  # Add north arrow and scale bar
+  annotation_scale(location = "bl", width_hint = 0.5) +
+  annotation_north_arrow(location = "tr", which_north = "true", 
+                         height = unit(1, "cm"), width = unit(1, "cm")) +
+  # Adjust legend and text
+  theme(
+    legend.position = "right",
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    axis.text = element_blank(),
+    axis.ticks = element_blank()
+  ) +
+  coord_sf()
+
+# Map the condensed classifications with 800m buffers
+ggplot() +
+  # Plot block groups with average walking potential
+  geom_sf(data = MA_blockgrp_5_walk, aes(fill = avrg_w_), color = NA, alpha = 0.8) +
+  scale_fill_viridis_c(
+    option = "mako",
+    name = "Avg Walking Potential",
+    na.value = "grey90"
+  ) +
+  # Add the 800m buffer zones
+  geom_sf(data = food1_buffers, fill = "lightblue", color = NA, alpha = 0.3) +
+  # Add the points for all food sites with updated classifications
+  geom_sf(data = ALLfoodsites1, aes(color = Store_Type), size = 2, alpha = 0.9) +
+  # Customize color scale for food site types
+  scale_color_viridis_d(name = "Store Type") +
+  # Overlay town boundaries for context
+  geom_sf(data = fivetowns, fill = NA, color = "black", size = 0.5) +
+  # Add labels and themes
+  theme_minimal() +
+  labs(
+    title = "Average Walking Potential and Food Distribution Sites with 800m Buffers",
+    subtitle = "Condensed Classifications of Food Sites in Essex Greenbelt Area",
+    caption = "Data Source: ACS 2020, Walkability Layer, NSFFC Food Access"
+  ) +
+  # Add north arrow and scale bar
+  annotation_scale(location = "bl", width_hint = 0.5) +
+  annotation_north_arrow(location = "tr", which_north = "true", 
+                         height = unit(1, "cm"), width = unit(1, "cm")) +
+  # Adjust legend and text
+  theme(
+    legend.position = "right",
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    axis.text = element_blank(),
+    axis.ticks = element_blank()
+  ) +
+  coord_sf()
+
+
+#Commuter Rail Map
+ggplot(data = fivetowns) +
+  # Plot the town boundaries
+  geom_sf(fill = "grey", color = "black", size = 0.5) +
+  
+  # Plot the transit lines with a mapped color for legend
+  geom_sf(data = transitlinesclipped, aes(color = "Commuter Rail Lines"), fill = NA, linewidth = 1, linetype = "solid") +
+  # Plot the transit points with a mapped color for legend
+  geom_sf(data = transit_points, aes(color = "Commuter Rail Points"), size = 4, shape = 16) +
+  
+  #Change Feature Colors
+  scale_color_manual(values = c("Commuter Rail Lines" = "forestgreen", 
+                                "Commuter Rail Points" = "green")) +
+  # Add labels and themes
+  theme_minimal() +
+  labs(
+    title = "Commuter Rail Stations and Lines in Essex County",
+    subtitle = "Focusing on Peabody, Salem, Beverly, Danvers, and Lynn",
+    caption = "Data Source: MBTA",
+    color = "Legend"  # This will add a legend title
+  ) +
+  
+  # Add north arrow and scale bar
+  annotation_scale(location = "bl", width_hint = 0.5) +
+  annotation_north_arrow(location = "tr", which_north = "true", 
+                         height = unit(1, "cm"), width = unit(1, "cm")) +
+  
+  # Adjust legend and text
+  theme(
+    legend.position = "right",
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10)
+  ) +
+  coord_sf() 
+
+```
+
+
+Analyze Variables
+
+```{r, out.width = "90%", echo=TRUE, message=FALSE, warning=FALSE}
+
+# Create a histogram for average walking potential
+ggplot(MA_blockgrp_5_walk, aes(x = avrg_w_)) +
+  geom_histogram(binwidth = 250, fill = "steelblue", color = "darkblue", alpha = 0.7) +
+  labs(
+    title = "Histogram of Average Walking Potential",
+    x = "Average Walking Potential",
+    y = "Frequency"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+    axis.title.x = element_text(size = 12),
+    axis.title.y = element_text(size = 12)
+  )
+
+# Create a histogram for percent households one or less car
+ggplot(MA_blockgrp_5_walk, aes(x = prnrlss)) +
+  geom_histogram(binwidth = 0.1, fill = "steelblue", color = "darkblue", alpha = 0.7) +
+  labs(
+    title = "Histogram of percent households one or less car",
+    x = "Percent households one or less car",
+    y = "Frequency"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+    axis.title.x = element_text(size = 12),
+    axis.title.y = element_text(size = 12)
+  )
+
+# Create a map of walking one or less variable
+ggplot() +
+  # Plot block groups with average walking potential
+  geom_sf(data = MA_blockgrp_5_walk, aes(fill = prnrlss), color = NA) +
+  scale_fill_viridis_c(
+    option = "mako",
+    name = "Avg Walking Potential",
+    na.value = "grey90"
+  ) +
+  # Overlay town boundaries for context
+  geom_sf(data = fivetowns, fill = NA, color = "black", size = 0.5) +
+  theme_minimal() +
+  labs(
+    title = "Percent households one or less car",
+    subtitle = "Census Block Group",
+    caption = "Data Source: ACS 2020"
+  ) +
+  theme(
+    legend.position = "right",
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    axis.text = element_blank(),
+    axis.ticks = element_blank()
+  ) +
+  coord_sf()
+
+
+# Create a histogram for percent white
+ggplot(MA_blockgrp_5_walk, aes(x = PctWhit)) +
+  geom_histogram(binwidth = 0.1, fill = "steelblue", color = "darkblue", alpha = 0.7) +
+  labs(
+    title = "Percent White",
+    x = "Percent White",
+    y = "Frequency"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+    axis.title.x = element_text(size = 12),
+    axis.title.y = element_text(size = 12)
+  )
+
+# Create a map of percent white variable
+ggplot() +
+  geom_sf(data = MA_blockgrp_5_walk, aes(fill = PctWhit), color = NA) +
+  scale_fill_viridis_c(
+    option = "mako",
+    name = "Avg Walking Potential",
+    na.value = "grey90"
+  ) +
+  # Overlay town boundaries for context
+  geom_sf(data = fivetowns, fill = NA, color = "black", size = 0.5) +
+  theme_minimal() +
+  labs(
+    title = "Percent white",
+    subtitle = "Census Block Group",
+    caption = "Data Source: ACS 2020"
+  ) +
+  theme(
+    legend.position = "right",
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    axis.text = element_blank(),
+    axis.ticks = element_blank()
+  ) +
+  coord_sf()
+
+
+# Create a histogram for english limited
+ggplot(MA_blockgrp_5_walk, aes(x = PctLmEn)) +
+  geom_histogram(binwidth = 0.05, fill = "steelblue", color = "darkblue", alpha = 0.7) +
+  labs(
+    title = "Histogram of English Limited Households",
+    x = "Percent households that are English Limited",
+    y = "Frequency"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+    axis.title.x = element_text(size = 12),
+    axis.title.y = element_text(size = 12)
+  )
+
+# Create a map of percent english limited variable
+ggplot() +
+  geom_sf(data = MA_blockgrp_5_walk, aes(fill = PctLmEn), color = NA) +
+  scale_fill_viridis_c(
+    option = "mako",
+    name = "Avg Walking Potential",
+    na.value = "grey90"
+  ) +
+  # Overlay town boundaries for context
+  geom_sf(data = fivetowns, fill = NA, color = "black", size = 0.5) +
+  theme_minimal() +
+  labs(
+    title = "Percent households that are English Limited",
+    subtitle = "Census Block Group",
+    caption = "Data Source: ACS 2020"
+  ) +
+  theme(
+    legend.position = "right",
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    axis.text = element_blank(),
+    axis.ticks = element_blank()
+  ) +
+  coord_sf()
+
+
+
+# Create a histogram for percent walkers
+ggplot(MA_blockgrp_5_walk, aes(x = prwlkrs)) +
+  geom_histogram(binwidth = 0.05, fill = "steelblue", color = "darkblue", alpha = 0.7) +
+  labs(
+    title = "Histogram of Walkers",
+    x = "Percent People who Walk to Work",
+    y = "Frequency"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+    axis.title.x = element_text(size = 12),
+    axis.title.y = element_text(size = 12)
+  )
+
+# Create a map of percent walkers variable
+ggplot() +
+  geom_sf(data = MA_blockgrp_5_walk, aes(fill = prwlkrs), color = NA) +
+  scale_fill_viridis_c(
+    option = "mako",
+    name = "Avg Walking Potential",
+    na.value = "grey90"
+  ) +
+  # Overlay town boundaries for context
+  geom_sf(data = fivetowns, fill = NA, color = "black", size = 0.5) +
+  theme_minimal() +
+  labs(
+    title = "Percent people who walk to work",
+    subtitle = "Census Block Group",
+    caption = "Data Source: ACS 2020"
+  ) +
+  theme(
+    legend.position = "right",
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    axis.text = element_blank(),
+    axis.ticks = element_blank()
+  ) +
+  coord_sf()
+
+
+
+# Create a histogram for percent Hispanic/LatinX
+ggplot(MA_blockgrp_5_walk, aes(x = PctHspn)) +
+  geom_histogram(binwidth = 0.1, fill = "steelblue", color = "darkblue", alpha = 0.7) +
+  labs(
+    title = "Histogram of Percent Hispanic",
+    x = "Percent Hispanic",
+    y = "Frequency"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+    axis.title.x = element_text(size = 12),
+    axis.title.y = element_text(size = 12)
+  )
+
+# Create a map of percent hispanic variable
+ggplot() +
+  geom_sf(data = MA_blockgrp_5_walk, aes(fill = PctHspn), color = NA) +
+  scale_fill_viridis_c(
+    option = "mako",
+    name = "Avg Walking Potential",
+    na.value = "grey90"
+  ) +
+  # Overlay town boundaries for context
+  geom_sf(data = fivetowns, fill = NA, color = "black", size = 0.5) +
+  theme_minimal() +
+  labs(
+    title = "Percent Hispanic",
+    subtitle = "Census Block Group",
+    caption = "Data Source: ACS 2020"
+  ) +
+  theme(
+    legend.position = "right",
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    axis.text = element_blank(),
+    axis.ticks = element_blank()
+  ) +
+  coord_sf()
+
+
+################################################################################
+###     Random Forest Analysis
+
+names(MA_blockgrp_5_walk)
+
+MA_blockgrp_5_walk1 <- MA_blockgrp_5_walk %>%
+  mutate(
+    popdensity = totlppE / ALAND)
+
+# Prepare data for Random Forest
+rf_data_geo <- MA_blockgrp_5_walk1 %>%
+  filter(!is.na(mdHshIE), !is.na(avrg_w_))
+
+
+names(rf_data_geo)
+
+rf_data_geo_select <- rf_data_geo %>% dplyr::select(avrg_w_, popdensity, PctWhit, PctBlck, PctHspn,PctLmEn,mdHshIE,prnrlss,prwlkrs,prpblct,pr_bchr, prvtrns, pr_nmpl, geometry)
+
+rf_data <- rf_data_geo_select %>% st_drop_geometry()
+
+
+set.seed(456)
+split_index <- createDataPartition(rf_data$avrg_w_, p = 0.8, list = FALSE)
+train_data <- rf_data[split_index, ]
+test_data <- rf_data[-split_index, ]
+
+# Create the model
+rf_model <- randomForest(avrg_w_ ~ ., data = train_data, ntree = 800, importance = TRUE)
+
+# Print the model summary
+print(rf_model)
+
+# Make predictions on the test set
+predictions <- predict(rf_model, test_data)
+predictions
+#Round to 1 decimal
+predictions_rd <- round(predictions, digits = 1)
+testdata_rd <- round(test_data$avrg_w_, digits = 1)
+
+# Evaluate accuracy
+accuracy <- sum(predictions == test_data) / nrow(test_data)
+cat("Accuracy:", accuracy, "\n")
+
+
+# Extract feature importance scores
+importance_scores <- randomForest::importance(rf_model)
+
+# Print feature importance scores
+print(importance_scores)
+
+sorted_scores <- importance_scores[order(importance_scores[, 1], decreasing = FALSE), , drop = FALSE]
+
+par(mar = c(5, 20, 4, 2),xpd = TRUE)  # Increase left margin (second value) to give space for the labels
+
+# Convert the feature importance scores into a data frame
+importance_df <- as.data.frame(importance_scores)
+importance_df$Feature <- rownames(importance_scores)
+colnames(importance_df) <- c("%IncMSE", "IncNodePurity", "Feature")
+
+names(importance_df)
+
+# Use the desired importance metric (e.g., "%IncMSE")
+importance_df <- importance_df %>%
+#  select("Feature", "%IncMSE") %>%
+  rename(Importance = "%IncMSE")
+
+# Sort the data by importance
+importance_df <- importance_df %>%
+  arrange(desc(Importance))
+
+print(importance_df)
+
+# Highlight specific features in yellow
+importance_df$Highlight <- ifelse(importance_df$Feature %in% c("prnrlss", "PctWhit", "PctLmEn", "PctHspn"), "yellow", "steelblue")
+
+# Create the ggplot
+importance_plot <- ggplot(importance_df, aes(x = reorder(Feature, Importance), y = Importance, fill = Highlight)) +
+  geom_bar(stat = "identity", color = "black") +
+  scale_fill_identity() +
+  coord_flip() +
+  theme_minimal() +
+  theme(
+    axis.text.y = element_text(size = 12),
+    axis.title.x = element_text(size = 14),
+    axis.title.y = element_blank(),
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5)
+  ) +
+  labs(
+    title = "Feature Importance",
+    x = "Feature",
+    y = "Importance (%IncMSE)"
+  )
+
+# Print the plot
+print(importance_plot)
+
+###########################################################################################################             Linear Analysis
+
+
+# Run the linear model
+lm_model <- lm(avrg_w_ ~ prnrlss + PctWhit + PctLmEn + PctHspn + popdensity, data = rf_data)
+
+# Get the summary of the linear model
+summary_lm <- summary(lm_model)
+print(summary_lm)
+
+# Visualize linear regression coefficients
+coefficients_df <- as.data.frame(summary_lm$coefficients)
+coefficients_df$Variable <- rownames(coefficients_df)
+colnames(coefficients_df) <- c("Estimate", "Std.Error", "t.value", "Pr(>|t|)", "Variable")
+coefficients_df <- coefficients_df[-1, ]  # Exclude the intercept
+
+# Plot the coefficients
+coeff_plot <- ggplot(coefficients_df, aes(x = reorder(Variable, Estimate), y = Estimate)) +
+  geom_bar(stat = "identity", fill = "steelblue", color = "black") +
+  geom_errorbar(aes(ymin = Estimate - Std.Error, ymax = Estimate + Std.Error), width = 0.2) +
+  coord_flip() +
+  theme_minimal() +
+  labs(
+    title = "Linear Model Coefficients",
+    x = "Variable",
+    y = "Coefficient Estimate"
+  )
+
+print(coeff_plot)
+
+
+# List of variables to compare with average_walking_potential
+scatter_variables <- c("prnrlss", "PctWhit", "PctLmEn", "PctHspn", "popdensity", "prwlkrs")
+
+# Loop through each variable to generate scatter plots with regression lines and R² values
+for (var in scatter_variables) {
+  # Fit a linear model
+  formula <- as.formula(paste("avrg_w_ ~", var))
+  lm_model <- lm(formula, data = rf_data)
+  r_squared <- summary(lm_model)$r.squared
+  
+  # Create the scatter plot with regression line
+  p <- ggplot(rf_data_geo, aes_string(x = var, y = "avrg_w_")) +
+    geom_point(alpha = 0.7, color = "purple") +
+    geom_smooth(method = "lm", se = FALSE, color = "blue") +
+    annotate("text", x = Inf, y = Inf, label = paste("R² =", round(r_squared, 3)),
+             hjust = 1.1, vjust = 1.5, size = 5, color = "blue") +
+    theme_minimal() +
+    labs(
+      title = paste("Scatter Plot:", var, "vs average_walking_potential"),
+      x = var,
+      y = "average_walking_potential"
+    ) +
+    theme(
+      plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+      axis.title = element_text(size = 12)
+    )
+  print(p)
+}
+
+```
+
+Transit Analysis
+
+```{r, out.width = "90%", echo=TRUE, message=FALSE, warning=FALSE}
+
+#Towns only
+Beverly <- fivetowns %>% filter(NAMELSAD20 %in% c("Beverly city"))
+Lynn <- fivetowns %>% filter(NAMELSAD20 %in% c("Lynn city"))
+Salem <- fivetowns %>% filter(NAMELSAD20 %in% c("Salem city"))
+
+#Train Buffers (800m) 
+transitbuffers <- st_buffer(transit_points, dist = 800)
+
+#Clip walkability to Train Buffers
+walkabilitytrains <- st_intersection(MA_blockgrp_5_walk, transitbuffers)
+
+#Clip walkability to Towns
+walkabilityBeverly <- st_intersection(walkabilitytrains, Beverly) #Beverly
+walkabilityLynn <- st_intersection(walkabilitytrains, Lynn) #Lynn
+walkabilitySalem <- st_intersection(walkabilitytrains, Salem) #Salem
+
+#Clip Walkability to Food Sites
+walkabilityfoodsites <- st_intersection(MA_blockgrp_5_walk, food1_buffers)
+
+#Clip Train Points
+transitpointsbeverly <- st_intersection(transit_points, Beverly)
+transitpointslynn <- st_intersection(transit_points, Lynn)
+transitpointssalem <- st_intersection(transit_points, Salem)
+
+#Clip Train lines
+transitlinesbeverly <- st_intersection(transit_lines, Beverly)
+transitlineslynn <- st_intersection(transit_lines, Lynn)
+transitlinessalem <- st_intersection(transit_lines, Salem)
+
+#Clip Food Sites
+foodsitesbeverly <- st_intersection(ALLfoodsites1, Beverly)
+foodsiteslynn <- st_intersection(ALLfoodsites1, Lynn)
+foodsitessalem <- st_intersection(ALLfoodsites1, Salem)
+
+#Clip Food Site Buffers 
+foodbuffersbeverly <- st_intersection(food1_buffers, Beverly)
+foodbufferslynn <- st_intersection(food1_buffers, Lynn)
+foodbufferssalem <- st_intersection(food1_buffers, Salem)
+
+#Food Sites Walkability
+ggplot(walkabilitytrains) +
+  geom_sf(data = fivetowns) +
+  geom_sf(data = , aes(fill = avrg_w_), color = NA, alpha = 0.8) +
+  scale_fill_viridis_c(
+    option = "plasma",  # Use a brighter palette like "plasma"
+    name = "Avg Walking Potential",
+    na.value = "grey90",
+    direction = 1  # Ensure colors are ascending for brightness
+  ) +
+  geom_sf(data = transit_lines , fill = NA, color = "forestgreen", linewidth = 1, linetype = "solid") +
+  geom_sf(data = transit_points, color = "green", size = 1, shape = 16) +
+  theme_minimal() +
+  labs(
+    title = "Average Walking Potential around MBTA 
+    Commuter Rail Stations in Peabody, Salem, Beverly, 
+    Danvers and Lynn",
+    subtitle = "Walking Potential Clipped to 800m from MBTA Commuter Stations",
+    caption = "Data Source: ACS 2020, Walkability Layer, MBTA"
+  ) +
+  annotation_scale(location = "bl", width_hint = 0.5) + 
+  annotation_north_arrow(location = "tr", which_north = "true", 
+                         height = unit(1, "cm"), width = unit(1, "cm")) + 
+  theme(
+    legend.position = "right",
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    axis.text = element_blank(),
+    axis.ticks = element_blank()
+  ) +
+  coord_sf()
+
+#Beverly Map
+ggplot() +
+  geom_sf(data = Beverly) +
+  geom_sf(data = walkabilityBeverly, aes(fill = avrg_w_), color = NA, alpha = 0.8) +
+  scale_fill_viridis_c(
+    option = "plasma",  # Use a brighter palette like "plasma"
+    name = "Avg Walking Potential",
+    na.value = "grey90",
+    direction = 1  # Ensure colors are ascending for brightness
+  ) +
+  geom_sf(data = transitlinesbeverly, fill = NA, color = "forestgreen", linewidth = 1, linetype = "solid") +
+  geom_sf(data = transitpointsbeverly, color = "green", size = 4, shape = 16) +
+  #geom_sf(data = foodbuffersbeverly, fill = "lightblue", color = NA, alpha = 0.3) +
+  geom_sf(data = foodsitesbeverly, aes(color = Store_Type), size = 2, alpha = 0.9) +
+  theme_minimal() +
+  labs(
+    title = "Commuter Rail Stations, Commuter Rail Lines, Average Walking Potential 
+    and Food Distribution Sites in Beverly",
+    caption = "Data Source: ACS 2020, Walkability Layer, NSFFC Food Access, MBTA"
+  ) +
+  annotation_scale(location = "bl", width_hint = 0.5) + 
+  annotation_north_arrow(location = "tr", which_north = "true", 
+                         height = unit(1, "cm"), width = unit(1, "cm")) + 
+  theme(
+    legend.position = "right",
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    axis.text = element_blank(),
+    axis.ticks = element_blank()
+  ) +
+  coord_sf()
+
+#Lynn Map
+ggplot() +
+  geom_sf(data = Lynn) +
+  geom_sf(data = walkabilityLynn, aes(fill = avrg_w_), color = NA, alpha = 0.8) +
+  scale_fill_viridis_c(
+    option = "plasma",  # Use a brighter palette like "plasma"
+    name = "Avg Walking Potential",
+    na.value = "grey90",
+    direction = 1  # Ensure colors are ascending for brightness
+  ) +
+  geom_sf(data = transitlineslynn, fill = NA, color = "forestgreen", linewidth = 1, linetype = "solid") +
+  geom_sf(data = transitpointslynn, color = "green", size = 4, shape = 16) +
+  #geom_sf(data = foodbufferslynn, fill = "lightblue", color = NA, alpha = 0.3) +
+  geom_sf(data = foodsiteslynn, aes(color = Store_Type), size = 2, alpha = 0.9) +
+  theme_minimal() +
+  labs(
+    title = "Commuter Rail Stations, Commuter Rail Lines, Average Walking 
+    Potential and Food Distribution Sites in Lynn",
+    caption = "Data Source: ACS 2020, Walkability Layer, NSFFC Food Access, MBTA"
+  ) +
+  annotation_scale(location = "bl", width_hint = 0.5) + 
+  annotation_north_arrow(location = "tr", which_north = "true", 
+                         height = unit(1, "cm"), width = unit(1, "cm")) + 
+  theme(
+    legend.position = "right",
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    axis.text = element_blank(),
+    axis.ticks = element_blank()
+  ) +
+  coord_sf()
+
+#Salem Map
+ggplot() +
+  geom_sf(data = Salem) +
+  geom_sf(data = walkabilitySalem, aes(fill = avrg_w_), color = NA, alpha = 0.8) +
+  scale_fill_viridis_c(
+    option = "plasma",  # Use a brighter palette like "plasma"
+    name = "Avg Walking Potential",
+    na.value = "grey90",
+    direction = 1  # Ensure colors are ascending for brightness
+  ) +
+  geom_sf(data = transitlinessalem, fill = NA, color = "forestgreen", linewidth = 1, linetype = "solid") +
+  geom_sf(data = transitpointssalem, color = "green", size = 4, shape = 16) +
+  #geom_sf(data = foodbufferssalem, fill = "lightblue", color = NA, alpha = 0.3) +
+  geom_sf(data = foodsitessalem, aes(color = Store_Type), size = 2, alpha = 0.9) +
+  theme_minimal() +
+  labs(
+    title = "Commuter Rail Stations, Commuter Rail Lines, Average Walking Potential 
+    and Food Distribution Sites in Salem",
+    caption = "Data Source: ACS 2020, Walkability Layer, NSFFC Food Access, MBTA"
+  ) +
+  annotation_scale(location = "bl", width_hint = 0.5) + 
+  annotation_north_arrow(location = "tr", which_north = "true", 
+                         height = unit(1, "cm"), width = unit(1, "cm")) + 
+  theme(
+    legend.position = "right",
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    axis.text = element_blank(),
+    axis.ticks = element_blank()
+  ) +
+  coord_sf()
+
+#########################################################################################################                     Findings
+
+#Walkability around each Train Station
+# Join transit station and walkability data
+walkability_with_station <- st_join(walkabilitytrains, transit_points, join = st_intersects)
+
+# Calculate the average walkability by station
+average_walkability_transit <- walkability_with_station %>%
+  group_by(STATION.x) %>% 
+  summarise(
+    Avg_Walking_Potential = mean(avrg_w_, na.rm = TRUE)
+  )
+
+#Food Sites within Transit Buffers 
+
+# Clip food sites to transit buffers
+food_sites_transit_buffers <- st_intersection(ALLfoodsites1, transitbuffers)
+
+# Join transit station and food sites
+food_sites_with_station <- st_join(food_sites_transit_buffers, transit_points, join = st_intersects)
+
+# Count the number of food sites within each transit station buffer
+food_sites_count_by_station <- food_sites_with_station %>%
+  group_by(STATION.x) %>%  
+  summarise(
+    Num_Food_Sites = n() 
+  )
+
+# Merge Above Findings into a table
+
+# Rename the 'STATION' column
+colnames(average_walkability_transit)[colnames(average_walkability_transit) == "STATION.x"] <- "STATION"
+colnames(food_sites_count_by_station)[colnames(food_sites_count_by_station) == "STATION.x"] <- "STATION"
+
+# Merge the two tables by station name
+station_walkability_and_foodsites <- st_join(average_walkability_transit, food_sites_count_by_station, by = "STATION")
+
+names(station_walkability_and_foodsites)
+
+#Remove geometry
+station_walkability_and_foodsites_noy <- station_walkability_and_foodsites %>%
+  dplyr::select(-STATION.y)
+station_walkability_and_foodsites_no_geom <- st_drop_geometry(station_walkability_and_foodsites_noy)
+station_walkability_and_foodsites_no_geom
+
+#remove NA and replace with 0
+station_walkability_and_foodsites_no_geom[is.na(station_walkability_and_foodsites_no_geom)] <- 0
+
+# Results
+print(station_walkability_and_foodsites_no_geom)
+write.csv(station_walkability_and_foodsites_no_geom, "merged_walkability_foodsites.csv", row.names = FALSE)
+
+# Relationship Between Food Sites and Walkability around MBTA Stations
+ggplot(station_walkability_and_foodsites_no_geom, aes(x = Avg_Walking_Potential, y = Num_Food_Sites)) +
+  geom_point() +
+  labs(title = "Food Sites vs. Walkability Score",
+       x = "Walkability Score",
+       y = "Number of Food Sites") +
+  theme_minimal()
+
+# Pearson correlation
+station_correlation <- cor.test(station_walkability_and_foodsites_no_geom$Avg_Walking_Potential, station_walkability_and_foodsites_no_geom$Num_Food_Sites)
+station_correlation
+
+names(MA_blockgrp_5_walk)
+
+#show transit census data and food sites
+ggplot() +
+  geom_sf(data = MA_blockgrp_5_walk, aes(fill = prpblct), color = "gray", size = 0.1) +
+  scale_fill_viridis_c(option = "inferno", name = "Transit Users") + 
+  geom_sf(data = fivetowns, fill = NA, color = "black", size = 0.5) +
+  geom_sf(data = transitlinesclipped, fill = NA, color = "forestgreen", linewidth = 1, linetype = "solid") +
+  geom_sf(data = transit_points, color = "green", size = 4, shape = 16) +
+  geom_sf(data = ALLfoodsites1, aes(color = Store_Type), size = 2, alpha = 0.9) +
+  theme_minimal() +
+  labs(title = "Census Data for Five Towns in Massachusetts",
+       subtitle = "Block Group Data (Transit Users)",
+       fill = "transit") +
+  theme(legend.position = "right") +
+  coord_sf(datum = st_crs(4326))
+```
+
+Food site and food desert analysis
+
+```{r, out.width = "90%", echo=TRUE, message=FALSE, warning=FALSE}
+
+#Clip walkability to food sites buffer
+walkabilityfoodsites <- st_intersection(fivetowns_walk, food1_buffers)
+
+#Spatial Join of Road Data with Census Block Groups
+foodsites_walkability <- st_join(food1_buffers, fivetowns_walk, join = st_intersects)
+
+# Summarize walking_po to calculate average value by GEOID, scaled by 1000
+foodsites_summary_data <- foodsites_walkability %>%
+  st_drop_geometry() %>%  # Remove spatial geometry for summarization
+  mutate(walking_po_scaled = walking_po * 10000) %>%  # Scale walking_po values by 10000
+  group_by(uniqueID) %>%     # Group by GEOID (or another unique identifier)
+  summarise(
+    average_walking_potential = mean(walking_po_scaled, na.rm = TRUE),  # Calculate average scaled walking potential
+    count = n()  # Count the number of rows per group
+  )
+
+# View the summarized data
+head(foodsites_summary_data)
+
+  
+#walking_potential <- st_make_valid(walking_potential)
+
+# Join summary_data back to spatial data for mapping
+foodsites_walkability1 <- left_join(food1_buffers, foodsites_summary_data, by = "uniqueID")
+
+names(foodsites_walkability1)
+
+ggplot(foodsites_walkability1, aes(x = Store_Type, y = average_walking_potential, fill = Store_Type)) +
+  geom_boxplot(outlier.shape = NA) +  # Suppress default outliers
+  geom_jitter(width = 0.2, size = 2, alpha = 0.7) +  # Add jittered points
+  labs(x = "Food Sites", y = "Average Walking Potential (x10,000)") +
+  theme_minimal()
+
+# ANOVA test to see if signifigant differences between store types
+foodsites_walkability1$Store_Type <- as.factor(foodsites_walkability1$Store_Type)
+
+res_aov <- aov(average_walking_potential ~ Store_Type,
+  data = foodsites_walkability1
+)
+
+summary(res_aov)
+
+# Tukey HSD test:
+post_test <- glht(res_aov,
+  linfct = mcp(Store_Type = "Tukey")
+)
+
+summary(post_test)
+
+###############################################################################################
+#####  Spatial analysis of Food Distribution Sites
+
+#havent been able to get the spatial join to work - results keep not making sense but also watching kids so.
+
+#Lynn
+foodsite_walkabilityLynn <- foodsites_walkability1 %>% filter(City == "Lynn")
+#Salem
+foodsite_walkabilitySalem <- foodsites_walkability1 %>% filter(City == "Salem")
+#Danvers
+foodsite_walkabilityDanvers <- foodsites_walkability1 %>% filter(City == "Danvers")
+#Peabody
+foodsite_walkabilityPeabody <- foodsites_walkability1 %>% filter(City == "Peabody")
+#Beverly
+foodsite_walkabilityBeverly <- foodsites_walkability1 %>% filter(City == "Beverly")
+
+ggplot(foodsite_walkabilityLynn, aes(x = Store_Type, y = average_walking_potential, fill = Store_Type))+
+  geom_boxplot(outlier.shape = NA) +  # Suppress default outliers
+  geom_jitter(width = 0.2, size = 2, alpha = 0.7) +  # Add jittered points
+  labs(x = "Lynn Food Sites", y = "Average Walking Potential (x10,000)") +
+  theme_minimal()
+
+ggplot(foodsite_walkabilitySalem, aes(x = Store_Type, y = average_walking_potential, fill = Store_Type))+
+  geom_boxplot(outlier.shape = NA) +  # Suppress default outliers
+  geom_jitter(width = 0.2, size = 2, alpha = 0.7) +  # Add jittered points
+  labs(x = "Salem Food Sites", y = "Average Walking Potential (x10,000)") +
+  theme_minimal()
+
+ggplot(foodsite_walkabilityDanvers, aes(x = Store_Type, y = average_walking_potential, fill = Store_Type))+
+  geom_boxplot(outlier.shape = NA) +  # Suppress default outliers
+  geom_jitter(width = 0.2, size = 2, alpha = 0.7) +  # Add jittered points
+  labs(x = "Danvers Food Sites", y = "Average Walking Potential (x10,000)") +
+  theme_minimal()
+
+ggplot(foodsite_walkabilityPeabody, aes(x = Store_Type, y = average_walking_potential, fill = Store_Type))+
+  geom_boxplot(outlier.shape = NA) +  # Suppress default outliers
+  geom_jitter(width = 0.2, size = 2, alpha = 0.7) +  # Add jittered points
+  labs(x = "Peabody Food Sites", y = "Average Walking Potential (x10,000)") +
+  theme_minimal()
+
+ggplot(foodsite_walkabilityBeverly, aes(x = Store_Type, y = average_walking_potential, fill = Store_Type))+
+  geom_boxplot(outlier.shape = NA) +  # Suppress default outliers
+  geom_jitter(width = 0.2, size = 2, alpha = 0.7) +  # Add jittered points
+  labs(x = "Beverly Food Sites", y = "Average Walking Potential (x10,000)") +
+  theme_minimal()
+
+
+##############################################################################################################               Maps of each food distribution walkability
+
+farms_walkability <- foodsites_walkability1 %>% filter(Store_Type == "Farm")
+
+#Choropleth map with ggplot
+ggplot() +
+  #Map fill by walking potential
+  # Plot block groups with average walking potential
+  geom_sf(data=farms_walkability, aes(fill = average_walking_potential), color = NA)+
+  scale_fill_viridis_c(
+    option = "plasma",
+    name = "Avg Walkability To Farm Stands",
+    na.value = "grey90")+
+  # Add the 800m buffer zones
+  # Customize color scale for food site types
+  scale_color_viridis_d(name = "Store Type")+
+  # Overlay town boundaries for context
+  geom_sf(data = fivetowns, fill = NA, color = "black", size = 0.5)+
+  # Add labels and themes
+  theme_minimal() +
+  labs(
+    title = "Average Walking Potential to Farm Stands",
+    subtitle = "Within 800M of Site",
+    caption = "Data Source: ACS 2020, Walkability Layer, NSFFC Food Access (Updated May 29, 2024)")+
+  # Add north arrow and scale bar
+  annotation_scale(location = "bl", width_hint = 0.5)+
+  annotation_north_arrow(location = "tr", which_north = "true", 
+                         height = unit(1, "cm"), width = unit(1, "cm"))+
+  # Adjust legend and text
+  theme(
+    legend.position = "right",
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    axis.text = element_blank(),
+    axis.ticks = element_blank()
+  )+ 
+  coord_sf()
+
+farmmarket_walkability <- foodsites_walkability1 %>% filter(Store_Type == "Farmer Markets")
+
+#Choropleth map with ggplot
+ggplot() +
+  #Map fill by walking potential
+  # Plot block groups with average walking potential
+  geom_sf(data=farmmarket_walkability, aes(fill = average_walking_potential), color = NA)+
+  scale_fill_viridis_c(
+    option = "plasma",
+    name = "Avg Walkability To Farm Stands",
+    na.value = "grey90")+
+  # Add the 800m buffer zones
+  # Customize color scale for food site types
+  scale_color_viridis_d(name = "Store Type")+
+  # Overlay town boundaries for context
+  geom_sf(data = fivetowns, fill = NA, color = "black", size = 0.5)+
+  # Add labels and themes
+  theme_minimal() +
+  labs(
+    title = "Average Walking Potential to Farmers Markets",
+    subtitle = "Within 800M of Site",
+    caption = "Data Source: ACS 2020, Walkability Layer, NSFFC Food Access (Updated May 29, 2024)")+
+  # Add north arrow and scale bar
+  annotation_scale(location = "bl", width_hint = 0.5)+
+  annotation_north_arrow(location = "tr", which_north = "true", 
+                         height = unit(1, "cm"), width = unit(1, "cm"))+
+  # Adjust legend and text
+  theme(
+    legend.position = "right",
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    axis.text = element_blank(),
+    axis.ticks = element_blank()
+  )+ 
+  coord_sf()
+
+Convenience_walkability <- foodsites_walkability1 %>% filter(Store_Type == "Convenience")
+
+#Choropleth map with ggplot
+ggplot() +
+  #Map fill by walking potential
+  # Plot block groups with average walking potential
+  geom_sf(data=Convenience_walkability, aes(fill = average_walking_potential), color = NA)+
+  scale_fill_viridis_c(
+    option = "plasma",
+    name = "Avg Walkability To Farm Stands",
+    na.value = "grey90")+
+  # Add the 800m buffer zones
+  # Customize color scale for food site types
+  scale_color_viridis_d(name = "Store Type")+
+  # Overlay town boundaries for context
+  geom_sf(data = fivetowns, fill = NA, color = "black", size = 0.5)+
+  # Add labels and themes
+  theme_minimal() +
+  labs(
+    title = "Average Walking Potential to Convenience Stores",
+    subtitle = "Within 800M of Site",
+    caption = "Data Source: ACS 2020, Walkability Layer, NSFFC Food Access (Updated May 29, 2024)")+
+  # Add north arrow and scale bar
+  annotation_scale(location = "bl", width_hint = 0.5)+
+  annotation_north_arrow(location = "tr", which_north = "true", 
+                         height = unit(1, "cm"), width = unit(1, "cm"))+
+  # Adjust legend and text
+  theme(
+    legend.position = "right",
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    axis.text = element_blank(),
+    axis.ticks = element_blank()
+  )+ 
+  coord_sf()
+
+foodpantry_walkability <- foodsites_walkability1 %>% filter(Store_Type == "Food Pantry")
+
+#Choropleth map with ggplot
+ggplot() +
+  #Map fill by walking potential
+  # Plot block groups with average walking potential
+  geom_sf(data=foodpantry_walkability, aes(fill = average_walking_potential), color = NA)+
+  scale_fill_viridis_c(
+    option = "plasma",
+    name = "Avg Walkability To Farm Stands",
+    na.value = "grey90")+
+  # Add the 800m buffer zones
+  # Customize color scale for food site types
+  scale_color_viridis_d(name = "Store Type")+
+  # Overlay town boundaries for context
+  geom_sf(data = fivetowns, fill = NA, color = "black", size = 0.5)+
+  # Add labels and themes
+  theme_minimal() +
+  labs(
+    title = "Average Walking Potential to Food Pantries",
+    subtitle = "Within 800M of Site",
+    caption = "Data Source: ACS 2020, Walkability Layer, NSFFC Food Access (Updated May 29, 2024)")+
+  # Add north arrow and scale bar
+  annotation_scale(location = "bl", width_hint = 0.5)+
+  annotation_north_arrow(location = "tr", which_north = "true", 
+                         height = unit(1, "cm"), width = unit(1, "cm"))+
+  # Adjust legend and text
+  theme(
+    legend.position = "right",
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    axis.text = element_blank(),
+    axis.ticks = element_blank()
+  )+ 
+  coord_sf()
+
+
+supermarket_walkability <- foodsites_walkability1 %>% filter(Store_Type == "Stores/Supermarkets")
+
+#Choropleth map with ggplot
+ggplot() +
+  #Map fill by walking potential
+  # Plot block groups with average walking potential
+  geom_sf(data=supermarket_walkability, aes(fill = average_walking_potential), color = NA)+
+  scale_fill_viridis_c(
+    option = "plasma",
+    name = "Avg Walkability To Farm Stands",
+    na.value = "grey90")+
+  # Add the 800m buffer zones
+  # Customize color scale for food site types
+  scale_color_viridis_d(name = "Store Type")+
+  # Overlay town boundaries for context
+  geom_sf(data = fivetowns, fill = NA, color = "black", size = 0.5)+
+  # Add labels and themes
+  theme_minimal() +
+  labs(
+    title = "Average Walking Potential to Grocery Stores",
+    subtitle = "Within 800M of Site",
+    caption = "Data Source: ACS 2020, Walkability Layer, NSFFC Food Access (Updated May 29, 2024)")+
+  # Add north arrow and scale bar
+  annotation_scale(location = "bl", width_hint = 0.5)+
+  annotation_north_arrow(location = "tr", which_north = "true", 
+                         height = unit(1, "cm"), width = unit(1, "cm"))+
+  # Adjust legend and text
+  theme(
+    legend.position = "right",
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    axis.text = element_blank(),
+    axis.ticks = element_blank()
+  )+ 
+  coord_sf()
+
+
+
+```
+
+## Results
+
+Walkability is calculated using three key factors: demand, transportation access, and social equity. Demand is measured using Local Access Scores for trips under 2.5 miles, supplemented by Streetlight data for all trips under 3 miles. Transportation access prioritizes areas within a 10-minute walk of transit hubs, while social equity focuses on disadvantaged groups, including minorities, low-income households, non-English-speaking households, people with disabilities, and others. This equation integrates spatial equity by weighting these metrics, ensuring the results highlight accessibility for vulnerable populations. Understanding these metrics is key to recognizing the data shown throughout this project. 
+
+Regarding walkability by food site type, food pantries and supermarkets exhibit the highest walkability scores, reflecting better urban integration and accessibility. Farmers’ markets form clusters with high walkability, largely due to their central urban locations. In contrast, farm stands and convenience stores demonstrate the lowest walkability, revealing significant gaps in accessibility for rural and suburban areas. This variability underscores the need for urban planning and policy efforts to target underperforming site types, particularly in less accessible regions, to enhance food equity.
+
+The analysis reveals significant relationships between demographic, socioeconomic, and geographic factors and walking potential for food distribution sites in Essex County. 
+
+*** THESE R2 are VERY low - on their own none of them are a strong relationship
+
+Scatter plots and maps demonstrate that walking potential positively correlates with limited English proficiency (R² = 0.264), Hispanic population percentage (R² = 0.244), and the percentage of households with one vehicle or less (R² = 0.228), while a negative correlation exists with the white population percentage (R² = 0.248). Population density also shows a moderate positive correlation with walking potential (R² = 0.321). 
+
+Maps of individual variables highlight disparities, with areas of high walking potential often aligning with high Hispanic population percentages, limited English proficiency, and low vehicle ownership, while predominantly white areas tend to have lower walking potential. Accessibility maps of 800m buffers around food sites reveal that food pantries and farmers markets are generally better integrated into walkable areas compared to grocery stores and farm stands. Linear regression analysis reinforces these findings, confirming that car ownership, population density and percent english limited households all positively influence walking potential. These results emphasize the need for equitable urban planning and targeted interventions to enhance walkability and accessibility, particularly in underserved communities.
+
+***NOTE THAT PER WHITE and PER HISP were NOT significant 
+
+Sam's - 
+
+A close up of all mapping can be seen within project - separated into the three towns that have commuter rail stations - Beverly, Lynn, and Salem. Walkability was analyzed by calculating the average walkability within 800m of each station. There is only one commuter rail line that runs through the study area and that is the Newburyport/Rockport MBTA commuter rail line. The most walkable MBTA site that was observed in this analysis is the Lynn Interim Station and the least walkable is Beverly Farms.  
+
+There are 22 food sites within 800m of the Lynn station and none within 800m of the Beverly Farms station, this in and of itself is telling and leads to the question of whether all stations with low walkability also have a low number of food sites. In Pearson's product-moment correlation the p-value indicate a statistically significant model - meaning there is enough evidence that a relationship between number of food sites and average walkability surrounding MBTA stations does exist. The correlation coefficient being 0.81 means that there is a strong positive relationship between number of food sites and the walkability around stations. In an effort to explain this the map showing transit user census data in relation to the three commuter rail towns was created. This shows a visual increase of ridership closer to commuter rail stations. 
+
+Lo's - 
+
+The overall walkability of an area changes greatly depending on the resolution and focus of an analysis as shown by the boxplots and choropleth maps, though the sample sizes and distribution between food access site types are not large enough for statistical comparison between locations, nor between type of food sites. When examining the walkability of towns at the road level with all 5 towns together, there's some walkability outside of downtown areas, though high walkability is concentrated in downtown Lynn and Salem as can be seen on the categorized walkability map. Histograms of walkability showed differences in the overall distribution, especially in Danvers and Peabody - both areas lacking public transportation and high walkability food access sites according to other maps in the analysis. Upon doing case studies of each individual town, walkability is higher along major roads and in downtown areas, and lowest the farther from a downtown one gets. While the majority of food access sites are in walkable areas in Lynn and Salem, Beverly, Danvers and Peabody show more variable walkability with their food access sites. In regards to the walkability around food pantries, the overall distribution of food pantries in Danvers and Peabody show low walkability, requiring individuals in these areas to have access to vehicles, an important detail discussed by my research partners Jeremy and Sam.
+
+
+#Citations
+
+Commonwealth of Massachusetts. (n.d.). Multi-family zoning requirement for MBTA communities. Massachusetts Government. Retrieved December 19, 2024, from https://www.mass.gov/info-details/multi-family-zoning-requirement-for-mbta-communities
+
+Town of Reading, Massachusetts. (n.d.). MBTA communities 3A process. Retrieved December 19, 2024, from https://www.readingma.gov/826/MBTA-Communities-3A-Process
+
+Ordnance Survey. (n.d.). Walkable cities: Health and social care. Retrieved December 19, 2024, from https://www.ordnancesurvey.co.uk/insights/walkable-cities#:~:text=800m)%20of%20their%20home.,Health%20and%20social%20care
+
+Commonwealth of Massachusetts. (2023, September 27). Governor Healey, AG Campbell celebrate MBTA communities’ momentum to lower housing costs. Massachusetts Government. Retrieved December 19, 2024, from https://www.mass.gov/news/governor-healey-ag-campbell-celebrate-mbta-communities-momentum-to-lower-housing-costs
+
+Anderson, R. B. (2023). Analysis of links between food accessibility and walkability in Boston, Massachusetts and three surrounding suburbs (Master's thesis, Georgia State University). https://doi.org/10.577f09/35323859
+
+Perez-Pereda, M., Krstikj, A., & Ramirez-Marquez, J. E. (2024). Improving fairness and equity by minimizing community vulnerability to food accessibility: A computational urbanism approach. Social Indicators Research, 171(2), 567–584. https://doi.org/10.1007/s11205-023-03269-5
+
+Land Trust Alliance. (n.d.). Essex County Greenbelt Association (MA). Retrieved November 11, 2024, from https://landtrustalliance.org/land-trusts/explore/essex-county-greenbelt-association-ma
+
+Commonwealth of Massachusetts. (n.d.). MassGIS (Bureau of Geographic Information). Retrieved November 11, 2024, from https://www.mass.gov/orgs/massgis-bureau-of-geographic-information
+
+Henry, C. (2023, August 16). Walkability tutorial. Henry Spatial Analysis. Retrieved November 11, 2024, from https://henryspatialanalysis.com/news/2023-08-16-walkability-tutorial.html
+
+National Association of City Transportation Officials. (2018). Potential for everyday biking methodology. Retrieved December 19, 2024, from https://ago-item-storage.s3.amazonaws.com/56852f8a17eb4f58b95da9cf6a597541/2018-10-15_Potential_for_Everyday_Biking_Methodology.pdf
+
+
