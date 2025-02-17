@@ -288,7 +288,7 @@ ALLfoodsites1 <- ALLfoodsites %>%
     TRUE ~ "Other"  # Retain "Other" as a category
   )) 
 
-st_write(ALLfoodsites1, "./Data/Outputs/food_sites/fdsites_6classes.shp")
+#st_write(ALLfoodsites1, "./Data/Outputs/food_sites/fdsites_6classes.shp")
 
 # Optionally, check the count of each category to confirm
 foodsite_summary <- ALLfoodsites1 %>%
@@ -1216,7 +1216,7 @@ station_walkability_and_foodsites_no_geom[is.na(station_walkability_and_foodsite
 
 # Results
 print(station_walkability_and_foodsites_no_geom)
-write.csv(station_walkability_and_foodsites_no_geom, "merged_walkability_foodsites.csv", row.names = FALSE)
+#write.csv(station_walkability_and_foodsites_no_geom, "merged_walkability_foodsites.csv", row.names #= FALSE)
 
 # Relationship Between Food Sites and Walkability around MBTA Stations
 ggplot(station_walkability_and_foodsites_no_geom, aes(x = Avg_Walking_Potential, y = Num_Food_Sites)) +
