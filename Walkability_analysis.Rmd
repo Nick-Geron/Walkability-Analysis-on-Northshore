@@ -1,6 +1,6 @@
 ---
 title: "Walkability Analysis"
-author: "Nicholas Geron"
+author: "Lo Berg, Jeremy Wilkens-Keene, Sam Langeleh, Nicholas Geron"
 date: "`r Sys.Date()`"
 output: html_document
 ---
@@ -287,6 +287,8 @@ ALLfoodsites1 <- ALLfoodsites %>%
     Store_Type %in% c("Grocery Store", "Super Store", "Supermarket") ~ "Stores/Supermarkets",
     TRUE ~ "Other"  # Retain "Other" as a category
   )) 
+
+st_write(ALLfoodsites1, "./Data/Outputs/food_sites/fdsites_6classes.shp")
 
 # Optionally, check the count of each category to confirm
 foodsite_summary <- ALLfoodsites1 %>%
@@ -850,6 +852,9 @@ names(rf_data_geo)
 
 rf_data_geo_select <- rf_data_geo %>% dplyr::select(avrg_w_, popdensity, PctWhit, PctBlck, PctHspn,PctLmEn,mdHshIE,prnrlss,prwlkrs,prpblct,pr_bchr, prvtrns, pr_nmpl, geometry)
 
+#Save outputs shapefile
+#st_write(rf_data_geo_select, #"./Data/Outputs/Censusblkgp_walkability_dataset/censusblgp_walkability_model.shp")
+
 rf_data <- rf_data_geo_select %>% st_drop_geometry()
 
 
@@ -1271,6 +1276,9 @@ head(foodsites_summary_data)
 
 # Join summary_data back to spatial data for mapping
 foodsites_walkability1 <- left_join(food1_buffers, foodsites_summary_data, by = "uniqueID")
+
+#Save outputs shapefile
+#st_write(foodsites_walkability1, #"./Data/Outputs/foodsite_buffer_walkability_dataset/fdsites_buff_walkability.shp")
 
 names(foodsites_walkability1)
 

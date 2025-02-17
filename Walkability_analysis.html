@@ -11,7 +11,7 @@
 
 <meta name="author" content="Nicholas Geron" />
 
-<meta name="date" content="2025-01-16" />
+<meta name="date" content="2025-02-16" />
 
 <title>Walkability Analysis</title>
 
@@ -352,7 +352,7 @@ display: none;
 
 <h1 class="title toc-ignore">Walkability Analysis</h1>
 <h4 class="author">Nicholas Geron</h4>
-<h4 class="date">2025-01-16</h4>
+<h4 class="date">2025-02-16</h4>
 
 </div>
 
@@ -512,7 +512,7 @@ town_boundary_path &lt;- &quot;./Data/CENSUS2020TOWNS_SHP/CENSUS2020TOWNS_POLY.s
 town_boundaries &lt;- st_read(town_boundary_path) %&gt;%
   st_transform(crs = working_crs) </code></pre>
 <pre><code>## Reading layer `CENSUS2020TOWNS_POLY&#39; from data source 
-##   `C:\Users\nicky\OneDrive\Documents\SalemState\4_Fall2024\GPH942_AdvQuant\Project\final\Walkability_git2\GreenbeltFinalProject\Data\CENSUS2020TOWNS_SHP\CENSUS2020TOWNS_POLY.shp&#39; 
+##   `C:\Users\nicky\OneDrive\Documents\SalemState\4_Fall2024\GPH942_AdvQuant\Project\final\Walkability_git3\Walkability-Analysis-on-Northshore\Data\CENSUS2020TOWNS_SHP\CENSUS2020TOWNS_POLY.shp&#39; 
 ##   using driver `ESRI Shapefile&#39;
 ## Simple feature collection with 351 features and 36 fields
 ## Geometry type: MULTIPOLYGON
@@ -600,7 +600,7 @@ file_path_food_sites &lt;- &quot;./Data/NSFFC_Food_Access/FarmStands_FarmersMark
 farmstands &lt;- st_read(file_path_food_sites) %&gt;%
   st_transform(crs = working_crs)</code></pre>
 <pre><code>## Reading layer `FarmStands_FarmersMarkets_Merge&#39; from data source 
-##   `C:\Users\nicky\OneDrive\Documents\SalemState\4_Fall2024\GPH942_AdvQuant\Project\final\Walkability_git2\GreenbeltFinalProject\Data\NSFFC_Food_Access\FarmStands_FarmersMarkets_Merge.shp&#39; 
+##   `C:\Users\nicky\OneDrive\Documents\SalemState\4_Fall2024\GPH942_AdvQuant\Project\final\Walkability_git3\Walkability-Analysis-on-Northshore\Data\NSFFC_Food_Access\FarmStands_FarmersMarkets_Merge.shp&#39; 
 ##   using driver `ESRI Shapefile&#39;
 ## replacing null geometries with empty geometries
 ## Simple feature collection with 32 features and 28 fields (with 1 geometry empty)
@@ -613,7 +613,7 @@ grocerystores_path &lt;- &quot;./Data/NSFFC_Food_Access/grocerystores_merge.shp&
 grocerystores &lt;- st_read(grocerystores_path) %&gt;%
   st_transform(crs = working_crs)  # Transform food sites to the correct CRS</code></pre>
 <pre><code>## Reading layer `grocerystores_merge&#39; from data source 
-##   `C:\Users\nicky\OneDrive\Documents\SalemState\4_Fall2024\GPH942_AdvQuant\Project\final\Walkability_git2\GreenbeltFinalProject\Data\NSFFC_Food_Access\grocerystores_merge.shp&#39; 
+##   `C:\Users\nicky\OneDrive\Documents\SalemState\4_Fall2024\GPH942_AdvQuant\Project\final\Walkability_git3\Walkability-Analysis-on-Northshore\Data\NSFFC_Food_Access\grocerystores_merge.shp&#39; 
 ##   using driver `ESRI Shapefile&#39;
 ## Simple feature collection with 70 features and 25 fields
 ## Geometry type: POINT
@@ -635,7 +635,7 @@ foodoutside_path &lt;- &quot;./Data/NSFFC_Food_Access/Foodoutside5towns.shp&quot
 foodoutside &lt;- st_read(foodoutside_path) %&gt;%
   st_transform(crs = working_crs)  # Transform food sites to the correct CRS</code></pre>
 <pre><code>## Reading layer `Foodoutside5towns&#39; from data source 
-##   `C:\Users\nicky\OneDrive\Documents\SalemState\4_Fall2024\GPH942_AdvQuant\Project\final\Walkability_git2\GreenbeltFinalProject\Data\NSFFC_Food_Access\Foodoutside5towns.shp&#39; 
+##   `C:\Users\nicky\OneDrive\Documents\SalemState\4_Fall2024\GPH942_AdvQuant\Project\final\Walkability_git3\Walkability-Analysis-on-Northshore\Data\NSFFC_Food_Access\Foodoutside5towns.shp&#39; 
 ##   using driver `ESRI Shapefile&#39;
 ## Simple feature collection with 12 features and 6 fields
 ## Geometry type: POINT
@@ -651,7 +651,7 @@ foodbanks_path &lt;- &quot;./Data/NSFFC_Food_Access/FoodBanks.shp&quot;
 foodbanks &lt;- st_read(foodbanks_path) %&gt;%
   st_transform(crs = working_crs)  # Transform food sites to the correct CRS</code></pre>
 <pre><code>## Reading layer `FoodBanks&#39; from data source 
-##   `C:\Users\nicky\OneDrive\Documents\SalemState\4_Fall2024\GPH942_AdvQuant\Project\final\Walkability_git2\GreenbeltFinalProject\Data\NSFFC_Food_Access\FoodBanks.shp&#39; 
+##   `C:\Users\nicky\OneDrive\Documents\SalemState\4_Fall2024\GPH942_AdvQuant\Project\final\Walkability_git3\Walkability-Analysis-on-Northshore\Data\NSFFC_Food_Access\FoodBanks.shp&#39; 
 ##   using driver `ESRI Shapefile&#39;
 ## Simple feature collection with 12 features and 13 fields
 ## Geometry type: POINT
@@ -751,7 +751,7 @@ food1_buffers &lt;- st_buffer(ALLfoodsites1, dist = 800)
 # Load walkability Census Shapefile
 MA_blockgrp_5_walk &lt;- st_read(&quot;./Data/Census_walkability5towns/maCensusblkgrp_walkability.shp&quot;)</code></pre>
 <pre><code>## Reading layer `maCensusblkgrp_walkability&#39; from data source 
-##   `C:\Users\nicky\OneDrive\Documents\SalemState\4_Fall2024\GPH942_AdvQuant\Project\final\Walkability_git2\GreenbeltFinalProject\Data\Census_walkability5towns\maCensusblkgrp_walkability.shp&#39; 
+##   `C:\Users\nicky\OneDrive\Documents\SalemState\4_Fall2024\GPH942_AdvQuant\Project\final\Walkability_git3\Walkability-Analysis-on-Northshore\Data\Census_walkability5towns\maCensusblkgrp_walkability.shp&#39; 
 ##   using driver `ESRI Shapefile&#39;
 ## Simple feature collection with 272 features and 62 fields
 ## Geometry type: MULTIPOLYGON
@@ -761,7 +761,7 @@ MA_blockgrp_5_walk &lt;- st_read(&quot;./Data/Census_walkability5towns/maCensusb
 <pre class="r"><code># Load walkability for 5 towns
 fivetowns_walk &lt;- st_read(&quot;./Data/MA_walkabilityindex/fivetowns_walkability1.shp&quot;)</code></pre>
 <pre><code>## Reading layer `fivetowns_walkability1&#39; from data source 
-##   `C:\Users\nicky\OneDrive\Documents\SalemState\4_Fall2024\GPH942_AdvQuant\Project\final\Walkability_git2\GreenbeltFinalProject\Data\MA_walkabilityindex\fivetowns_walkability1.shp&#39; 
+##   `C:\Users\nicky\OneDrive\Documents\SalemState\4_Fall2024\GPH942_AdvQuant\Project\final\Walkability_git3\Walkability-Analysis-on-Northshore\Data\MA_walkabilityindex\fivetowns_walkability1.shp&#39; 
 ##   using driver `ESRI Shapefile&#39;
 ## Simple feature collection with 17844 features and 38 fields
 ## Geometry type: MULTILINESTRING
@@ -776,7 +776,7 @@ commuterrailstations_path &lt;- &quot;./Data/CommuterRail/CommuterRailStations/M
 transit_points &lt;- st_read(commuterrailstations_path) %&gt;%
   st_transform(crs = working_crs)</code></pre>
 <pre><code>## Reading layer `MBTACommuterRailStations_projectarea&#39; from data source 
-##   `C:\Users\nicky\OneDrive\Documents\SalemState\4_Fall2024\GPH942_AdvQuant\Project\final\Walkability_git2\GreenbeltFinalProject\Data\CommuterRail\CommuterRailStations\MBTACommuterRailStations_projectarea.shp&#39; 
+##   `C:\Users\nicky\OneDrive\Documents\SalemState\4_Fall2024\GPH942_AdvQuant\Project\final\Walkability_git3\Walkability-Analysis-on-Northshore\Data\CommuterRail\CommuterRailStations\MBTACommuterRailStations_projectarea.shp&#39; 
 ##   using driver `ESRI Shapefile&#39;
 ## Simple feature collection with 7 features and 6 fields
 ## Geometry type: POINT
@@ -788,7 +788,7 @@ commuterrailline_path &lt;- &quot;./Data/CommuterRail/CommuterRailLines/MBTAComm
 transit_lines &lt;- st_read(commuterrailline_path) %&gt;%
   st_transform(crs = working_crs)</code></pre>
 <pre><code>## Reading layer `MBTACommuterRailLines_projectarea&#39; from data source 
-##   `C:\Users\nicky\OneDrive\Documents\SalemState\4_Fall2024\GPH942_AdvQuant\Project\final\Walkability_git2\GreenbeltFinalProject\Data\CommuterRail\CommuterRailLines\MBTACommuterRailLines_projectarea.shp&#39; 
+##   `C:\Users\nicky\OneDrive\Documents\SalemState\4_Fall2024\GPH942_AdvQuant\Project\final\Walkability_git3\Walkability-Analysis-on-Northshore\Data\CommuterRail\CommuterRailLines\MBTACommuterRailLines_projectarea.shp&#39; 
 ##   using driver `ESRI Shapefile&#39;
 ## Simple feature collection with 16 features and 27 fields
 ## Geometry type: LINESTRING
